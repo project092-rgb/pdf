@@ -11,7 +11,6 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 import asyncio
 from PIL import Image
 from transformers import BlipProcessor, BlipForConditionalGeneration
-import time
 
 # -------------------- Page Config --------------------
 st.set_page_config(page_title="SlideSense", page_icon="📘", layout="wide")
@@ -23,9 +22,10 @@ def load_lottie(url):
         return None
     return r.json()
 
+# Animations
 login_anim = load_lottie("https://assets10.lottiefiles.com/packages/lf20_jcikwtux.json")
-ai_anim = load_lottie("https://assets10.lottiefiles.com/packages/lf20_qp1q7mct.json")
-upload_anim = load_lottie("https://assets10.lottiefiles.com/packages/lf20_ysrn2iwp.json")
+pdf_anim = load_lottie("https://assets9.lottiefiles.com/packages/lf20_q5pk6p1k.json")
+image_anim = load_lottie("https://assets2.lottiefiles.com/packages/lf20_iorpbol0.json")
 
 # -------------------- Session --------------------
 defaults = {
@@ -34,27 +34,19 @@ defaults = {
     "authenticated": False,
     "users": {"admin": "admin123"}
 }
-for k,v in defaults.items():
+for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# -------------------- Typing Effect --------------------
-def type_text(text, speed=0.02):
-    container = st.empty()
-    typed = ""
-    for c in text:
-        typed += c
-        container.markdown(f"### {typed}")
-        time.sleep(speed)
-
 # -------------------- Auth UI --------------------
 def login_ui():
-    col1, col2 = st.columns([1,1])
+    col1, col2 = st.columns([1, 1])
 
     with col1:
         st_lottie(login_anim, height=300)
+
     with col2:
-        type_text("🔐 Welcome to SlideSense", 0.05)
+        st.markdown("## 🔐 Welcome to SlideSense")
         st.markdown("### AI Powered Learning Platform")
 
         tab1, tab2 = st.tabs(["Login", "Sign Up"])
@@ -109,35 +101,39 @@ if st.sidebar.button("Logout"):
 page = st.sidebar.radio("Mode", ["📘 PDF Analyzer", "🖼 Image Recognition"])
 
 st.sidebar.markdown("### 💬 History")
-for q,a in st.session_state.chat_history[-8:]:
+for q, a in st.session_state.chat_history[-8:]:
     st.sidebar.markdown(f"- {q[:30]}")
 
-# -------------------- Hero --------------------
-col1, col2 = st.columns([1,2])
-with col1:
-    st_lottie(ai_anim, height=260)
-with col2:
-    type_text("📘 SlideSense AI Platform", 0.03)
-    st.markdown("### Smart Learning | Smart Vision | Smart AI")
-st.divider()
-
-# -------------------- PDF Analyzer --------------------
+# ========================= PDF ANALYZER =========================
 if page == "📘 PDF Analyzer":
-    st_lottie(upload_anim, height=180)
+
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        st_lottie(pdf_anim, height=200)
+
+    with col2:
+        st.markdown("## 📘 PDF Analyzer")
+        st.markdown("Upload your document and ask AI questions from it.")
+
+    st.divider()
+
     pdf = st.file_uploader("Upload PDF", type="pdf")
 
     if pdf:
         if st.session_state.vector_db is None:
-            with st.spinner("🧠 AI is processing your document..."):
-                st_lottie(ai_anim, height=120)
+            with st.spinner("🧠 Processing your document..."):
 
                 reader = PdfReader(pdf)
                 text = ""
                 for p in reader.pages:
                     if p.extract_text():
-                        text += p.extract_text()+"\n"
+                        text += p.extract_text() + "\n"
 
-                splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=80)
+                splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=500,
+                    chunk_overlap=80
+                )
                 chunks = splitter.split_text(text)
 
                 try:
@@ -145,7 +141,10 @@ if page == "📘 PDF Analyzer":
                 except:
                     asyncio.set_event_loop(asyncio.new_event_loop())
 
-                embeddings = HuggingFaceEmbeddings(model_name='sentence-transformers/all-MiniLM-L6-v2')
+                embeddings = HuggingFaceEmbeddings(
+                    model_name='sentence-transformers/all-MiniLM-L6-v2'
+                )
+
                 st.session_state.vector_db = FAISS.from_texts(chunks, embeddings)
 
         st.success("PDF Ready 🚀")
@@ -153,14 +152,14 @@ if page == "📘 PDF Analyzer":
         q = st.text_input("Ask your question")
 
         if q:
-            with st.spinner("🤖 AI is thinking..."):
-                st_lottie(ai_anim, height=120)
+            with st.spinner("🤖 Generating answer..."):
 
                 docs = st.session_state.vector_db.similarity_search(q, k=5)
+
                 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 
                 history = ""
-                for x,y in st.session_state.chat_history[-5:]:
+                for x, y in st.session_state.chat_history[-5:]:
                     history += f"Q:{x}\nA:{y}\n"
 
                 prompt = ChatPromptTemplate.from_template("""
@@ -179,28 +178,43 @@ Rules:
 """)
 
                 chain = create_stuff_documents_chain(llm, prompt)
-                res = chain.invoke({"context":docs,"question":q,"history":history})
 
-                st.session_state.chat_history.append((q,res))
+                res = chain.invoke({
+                    "context": docs,
+                    "question": q,
+                    "history": history
+                })
+
+                st.session_state.chat_history.append((q, res))
 
         st.markdown("## 💬 AI Conversation")
-        for q,a in st.session_state.chat_history:
+
+        for q, a in st.session_state.chat_history:
             st.markdown(f"🧑 **You:** {q}")
-            time.sleep(0.15)
             st.markdown(f"🤖 **AI:** {a}")
             st.divider()
 
-# -------------------- Image Recognition --------------------
+# ========================= IMAGE RECOGNITION =========================
 if page == "🖼 Image Recognition":
-    st_lottie(upload_anim, height=180)
-    img_file = st.file_uploader("Upload Image", type=["png","jpg","jpeg"])
+
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        st_lottie(image_anim, height=200)
+
+    with col2:
+        st.markdown("## 🖼 Image Recognition")
+        st.markdown("Upload an image and let AI describe it.")
+
+    st.divider()
+
+    img_file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
 
     if img_file:
         img = Image.open(img_file)
         st.image(img, use_column_width=True)
 
-        with st.spinner("🤖 AI Vision Processing..."):
-            st_lottie(ai_anim, height=120)
+        with st.spinner("🤖 Processing image..."):
             desc = describe_image(img)
 
         st.success(desc)
